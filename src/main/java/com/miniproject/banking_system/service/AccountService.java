@@ -11,9 +11,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.miniproject.banking_system.dto.InterestResponse;
-import com.miniproject.banking_system.dto.InterestRequest;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -26,125 +25,146 @@ public class AccountService {
     @Autowired
     private TransactionRepository transactionRepository;
 
-
-    private void logTransaction(Long accountId, TransactionType type, double amount)
-    {
-        Transaction transaction = new Transaction(accountId, type, amount);
-        transactionRepository.save(transaction);
-    }
-
-
+    /**
+     * Create a new bank account.
+     * Ledger-based design:
+     *  - Account always starts with 0 balance.
+     *  - Initial deposit is done using deposit() method.
+     */
     public Account createAccount(String name, double initialDeposit) {
-        log.info("Creating account for name: {}, initialDeposit: {}", name, initialDeposit);
-        Account account = new Account(name, initialDeposit);
-        Account savedAccount = accountRepository.save(account);
-        log.info("Account created successfully with ID: {}", savedAccount.getId());
-        return savedAccount;
-    }
+        log.info("Creating account for: {} with initial deposit: {}", name, initialDeposit);
 
-    public List<Account> getAllAccounts() {
-        log.info("Fetching all accounts");
-        List<Account> accounts = accountRepository.findAll();
-        log.info("Total accounts retrieved: {}", accounts.size());
-        return accounts;
-    }
+        // Step 1️⃣: Create the account with zero balance
+        Account account = new Account(name, 0.0);
+        account.setCreatedAt(LocalDateTime.now());
+        account = accountRepository.save(account);
 
-    public Account getAccount(Long id) {
-        log.info("Fetching account with ID: {}", id);
-        Account account = accountRepository.findById(id)
-                .orElseThrow(() -> {
-                    log.warn("Account with ID {} not found", id);
-                    return new AccountNotFoundException(id);
-                });
-        log.info("Account retrieved: {}", account);
+        // Step 2️⃣: If initial deposit is provided, record it as a deposit transaction
+        if (initialDeposit > 0) {
+            log.info("Recording initial deposit of ₹{} for Account ID: {}", initialDeposit, account.getId());
+            deposit(account.getId(), initialDeposit);
+        }
+
+        log.info("✅ Account created successfully. ID: {}, Balance: {}", account.getId(), account.getBalance());
         return account;
     }
 
-    public Account deposit(Long id, double amount)
-    {
-        log.info("Depositing amount: {} to account ID: {}", amount, id);
-        Account account = accountRepository.findById(id)
-                .orElseThrow(() ->
-                {
-                    log.warn("Account with ID {} not found for deposit", id);
-                    return new AccountNotFoundException(id);
-                });
-        account.setBalance(account.getBalance() + amount);
-        Account updatedAccount = accountRepository.save(account);
-
-        logTransaction(id, TransactionType.DEPOSIT, amount);
-        log.info("Deposit successful. New balance: {}", updatedAccount.getBalance());
-        return updatedAccount;
+    /**
+     * Get all accounts.
+     */
+    public List<Account> getAllAccounts() {
+        log.info("Fetching all accounts");
+        List<Account> accounts = accountRepository.findAll();
+        log.info("Total accounts found: {}", accounts.size());
+        return accounts;
     }
 
-    public Account withdraw(Long id, double amount)
-    {
-        log.info("Withdrawing amount: {} from account ID: {}", amount, id);
+    /**
+     * Get account by ID.
+     */
+    public Account getAccount(Long id) {
+        return accountRepository.findById(id)
+                .orElseThrow(() -> new AccountNotFoundException(id));
+    }
+
+    /**
+     * Deposit money into an account.
+     */
+    @Transactional
+    public Account deposit(Long id, double amount) {
+        log.info("Depositing ₹{} into Account ID: {}", amount, id);
+
         Account account = accountRepository.findById(id)
-                .orElseThrow(() ->
-                {
-                    log.warn("Account with ID {} not found for withdrawal", id);
-                    return new AccountNotFoundException(id);
-                });
-        if (account.getBalance() < amount)
-        {
-            log.warn("Insufficient funds for withdrawal. Account ID: {}, Balance: {}, Requested: {}", id, account.getBalance(), amount);
+                .orElseThrow(() -> new AccountNotFoundException(id));
+
+        if (amount <= 0) {
+            throw new IllegalArgumentException("Deposit amount must be positive.");
+        }
+
+        account.setBalance(account.getBalance() + amount);
+        accountRepository.save(account);
+
+        Transaction transaction = new Transaction(id, TransactionType.DEPOSIT, amount);
+        transactionRepository.save(transaction);
+
+        log.info("✅ Deposit successful. New balance: {}", account.getBalance());
+        return account;
+    }
+
+    /**
+     * Withdraw money from an account.
+     */
+    @Transactional
+    public Account withdraw(Long id, double amount) {
+        log.info("Withdrawing ₹{} from Account ID: {}", amount, id);
+
+        Account account = accountRepository.findById(id)
+                .orElseThrow(() -> new AccountNotFoundException(id));
+
+        if (amount <= 0) {
+            throw new IllegalArgumentException("Withdrawal amount must be positive.");
+        }
+
+        if (account.getBalance() < amount) {
             throw new InsufficientFundsException(amount);
         }
-        account.setBalance(account.getBalance() - amount);
-        Account updatedAccount = accountRepository.save(account);
 
-        logTransaction(id, TransactionType.WITHDRAW, amount);
-        log.info("Withdrawal successful. New balance: {}", updatedAccount.getBalance());
-        return updatedAccount;
+        account.setBalance(account.getBalance() - amount);
+        accountRepository.save(account);
+
+        Transaction transaction = new Transaction(id, TransactionType.WITHDRAW, amount);
+        transactionRepository.save(transaction);
+
+        log.info("✅ Withdrawal successful. Remaining balance: {}", account.getBalance());
+        return account;
     }
 
+    /**
+     * Transfer funds between two accounts atomically.
+     */
     @Transactional
-    public String transferFunds(Long fromId, Long toId, double amount)
-    {
-        log.info("Initiating transfer of amount: {} from Account ID: {} to Account ID: {}", amount, fromId, toId);
+    public String transferFunds(Long fromId, Long toId, double amount) {
+        log.info("Transferring ₹{} from Account ID {} → Account ID {}", amount, fromId, toId);
+
+        if (fromId.equals(toId)) {
+            throw new IllegalArgumentException("Source and destination accounts cannot be the same.");
+        }
 
         Account fromAccount = accountRepository.findById(fromId)
-                .orElseThrow(() ->
-                {
-                    log.warn("Source account with ID {} not found", fromId);
-                    return new AccountNotFoundException(fromId);
-                });
+                .orElseThrow(() -> new AccountNotFoundException(fromId));
 
         Account toAccount = accountRepository.findById(toId)
-                .orElseThrow(() ->
-                {
-                    log.warn("Destination account with ID {} not found", toId);
-                    return new AccountNotFoundException(toId);
-                });
+                .orElseThrow(() -> new AccountNotFoundException(toId));
 
-        if (fromAccount.getBalance() < amount)
-        {
-            log.warn("Insufficient funds in source account. Balance: {}, Requested: {}", fromAccount.getBalance(), amount);
+        if (amount <= 0) {
+            throw new IllegalArgumentException("Transfer amount must be positive.");
+        }
+
+        if (fromAccount.getBalance() < amount) {
             throw new InsufficientFundsException(amount);
         }
 
+        // Debit source account
         fromAccount.setBalance(fromAccount.getBalance() - amount);
-        toAccount.setBalance(toAccount.getBalance() + amount);
-
         accountRepository.save(fromAccount);
-        accountRepository.save(toAccount);
+        transactionRepository.save(new Transaction(fromId, TransactionType.TRANSFER, -amount));
 
-        logTransaction(fromId, TransactionType.TRANSFER, -amount);
-        logTransaction(toId,TransactionType.TRANSFER,amount);
-        log.info("Transfer successful. New balance of source account (ID: {}): {}", fromId, fromAccount.getBalance());
+        // Credit destination account
+        toAccount.setBalance(toAccount.getBalance() + amount);
+        accountRepository.save(toAccount);
+        transactionRepository.save(new Transaction(toId, TransactionType.TRANSFER, amount));
+
+        log.info("✅ Transfer complete. Source new balance: {}", fromAccount.getBalance());
         return "Transfer Successful. Remaining balance: " + fromAccount.getBalance();
     }
 
-
-    public List<Transaction> getTransactions(Long accountId)
-    {
+    /**
+     * Get all transactions for a specific account.
+     */
+    public List<Transaction> getTransactions(Long accountId) {
         log.info("Fetching transactions for Account ID: {}", accountId);
         List<Transaction> transactions = transactionRepository.findByAccountIdOrderByTimestampDesc(accountId);
-        log.info("Total transactions retrieved for Account ID {}: {}", accountId, transactions.size());
+        log.info("Total transactions fetched: {}", transactions.size());
         return transactions;
     }
-
-
-
 }
