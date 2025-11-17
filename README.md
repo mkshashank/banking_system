@@ -1,171 +1,301 @@
-# Banking System - Spring Boot Project
+---
 
-A complete **Banking Management System** built using **Spring Boot**, designed to simulate real-world banking operations including account creation, balance inquiry, deposit/withdrawal, fund transfer, loan eligibility evaluation, and transaction history tracking.
+# 🏦 Banking System – Spring Boot Project
 
-This project follows layered architecture with DTOs, Services, Repositories, Controllers, and proper exception handling.
+A **complete Banking Management System** built using **Spring Boot**, designed to simulate real-world banking operations such as **account creation**, **balance inquiry**, **fund transfers**, **loan eligibility evaluation**, **interest & fixed deposit calculations**, **monthly statements**, and a **comprehensive admin analytics dashboard**.
+
+This project follows a clean **layered architecture** — using DTOs, Services, Repositories, and Controllers — with robust exception handling and well-structured unit tests.
 
 ---
 
-## ✅ Features
+## ✨ Features
 
-### 🏦 **Account Management**
+### 🏦 Account Management
 
-* Create new bank account
-* Fetch account details by account number
-* Deposit money
-* Withdraw money with balance validation
-* Check account balance
-* Fund transfer between accounts (with validation)
-* List all accounts
+* Create new bank accounts
+* Fetch account details by account ID
+* Deposit and withdraw funds with balance validation
+* Perform fund transfers between accounts (atomic & transactional)
+* View all transactions for a specific account
+* List all existing accounts
 
-### 💰 **Loan Eligibility System**
+### 💰 Loan Eligibility System
 
 * Evaluate loan eligibility based on:
 
   * Age
-  * Annual income
+  * Annual Income
   * Credit Score
-  * Existing loan burden
-* Calculates maximum eligible loan amount
+  * Existing Loan Burden
+* Dynamically calculate maximum eligible loan amount
 
-### 📜 **Transaction Management**
+### 📈 Financial Calculators
 
-* Track all deposit, withdrawal, and transfer transactions
-* View transaction history for a specific account
+* **Simple Interest Calculator** → `/interest/calculateInterest`
+* **Fixed Deposit Calculator** → `/fixedDeposit`
+* Supports **compound interest** and **premature withdrawal penalty (1%)**
 
-### 🛠️ **Additional Features**
+### 📅 Monthly Statement Generator
 
-* Proper DTO layer
-* Service & Repository architecture
-* Custom Exception handling
-* Logging via **SLF4J + Lombok**
-* JUnit Test Cases for business logic
+* Generate a monthly summary of all transactions for any month & year
+* Calculates:
+
+  * Opening Balance
+  * Total Deposits
+  * Total Withdrawals
+  * Closing Balance
+
+**Example Response:**
+
+```json
+{
+  "month": "NOVEMBER",
+  "openingBalance": 15000,
+  "totalDeposits": 3000,
+  "totalWithdrawals": 2000,
+  "closingBalance": 16000
+}
+```
+
+### 📊 Admin Dashboard
+
+* Real-time analytics and reporting for admins using JPQL aggregation
+* Includes:
+
+  * Total customers
+  * Total deposits and withdrawals
+  * Top accounts (balance > ₹1L)
+  * Loan eligibility summary (eligible vs ineligible)
+  * Combined system dashboard → `/admin/dashboard`
+
+**Example Response:**
+
+```json
+{
+  "totalCustomers": 6,
+  "totalDeposits": 82000.0,
+  "totalWithdrawals": 25000.0,
+  "totalTransactions": 15,
+  "topAccountsCount": 2,
+  "totalLoanRequests": 8,
+  "eligibleLoans": 5,
+  "ineligibleLoans": 3,
+  "systemHealth": "ACTIVE"
+}
+```
+
+---
+
+## 🧩 Additional Features
+
+✅ DTO-based data transfer
+✅ Layered architecture (`Controller → Service → Repository → DB`)
+✅ Custom exception handling (`AccountNotFoundException`, `InsufficientFundsException`, etc.)
+✅ Transactional fund transfers (ensures atomic operations)
+✅ SLF4J + Lombok-based structured logging
+✅ Unit tests for major business logic (Loan, FD, Interest, Statement, Admin)
+✅ Optimized JPQL aggregation for Admin Dashboard
+✅ Modular and scalable design
 
 ---
 
 ## 📂 Project Structure
 
+<details>
+<summary>Click to view project structure</summary>
+
 ```
 src/main/java/com/miniproject/banking_system
 ├── controller
-│   ├── AccountController.java
-│   ├── LoanEligibilityController.java
-│   └── TransactionController.java
+│   ├── AccountController.java
+│   ├── LoanEligibilityController.java
+│   ├── FixedDepositController.java
+│   ├── InterestController.java
+│   ├── StatementController.java
+│   └── AdminController.java
+│
 ├── dto
-│   ├── AccountRequest.java
-│   ├── AccountResponse.java
-│   ├── DepositRequest.java
-│   ├── TransferRequest.java
-│   ├── LoanEligibilityRequest.java
-│   └── LoanEligibilityResponse.java
+│   ├── TransferRequest.java
+│   ├── InterestRequest.java
+│   ├── InterestResponse.java
+│   ├── FixedDepositRequest.java
+│   ├── FixedDepositResponse.java
+│   ├── LoanEligibilityRequest.java
+│   ├── LoanEligibilityResponse.java
+│   ├── AdminSummaryResponse.java
+│   └── AdminDashboardResponse.java
+│
 ├── model
-│   ├── Account.java
-│   └── Transaction.java
+│   ├── Account.java
+│   ├── Transaction.java
+│   └── TransactionType.java
+│
 ├── repository
-│   ├── AccountRepository.java
-│   └── TransactionRepository.java
-└── service
-    ├── AccountService.java
-    ├── LoanEligibilityService.java
-    └── TransactionService.java
+│   ├── AccountRepository.java
+│   └── TransactionRepository.java
+│
+├── service
+│   ├── AccountService.java
+│   ├── LoanEligibilityService.java
+│   ├── FixedDepositService.java
+│   ├── InterestService.java
+│   ├── StatementService.java
+│   └── AdminService.java
+│
+├── exception
+│   ├── AccountNotFoundException.java
+│   ├── InsufficientFundsException.java
+│   └── GlobalExceptionHandler.java
+│
+└── resources
+    └── application.properties
 ```
+
+</details>
 
 ---
 
 ## 🚀 API Endpoints Summary
 
-### **Account APIs**
+### 🏦 Account APIs
 
-| Method | Endpoint                            | Description      |
-| ------ | ----------------------------------- | ---------------- |
-| POST   | `/accounts`                         | Create Account   |
-| GET    | `/accounts/{accountNumber}`         | Get Account Info |
-| POST   | `/accounts/deposit`                 | Deposit Amount   |
-| POST   | `/accounts/withdraw`                | Withdraw Amount  |
-| POST   | `/accounts/transfer`                | Transfer Funds   |
-| GET    | `/accounts/balance/{accountNumber}` | Check Balance    |
-| GET    | `/accounts`                         | Get All Accounts |
+| Method | Endpoint                      | Description               |
+| ------ | ----------------------------- | ------------------------- |
+| POST   | `/accounts`                   | Create new account        |
+| GET    | `/accounts/{id}`              | Get account details       |
+| POST   | `/accounts/{id}/deposit`      | Deposit funds             |
+| POST   | `/accounts/{id}/withdraw`     | Withdraw funds            |
+| POST   | `/accounts/transfer`          | Transfer between accounts |
+| GET    | `/accounts/transactions/{id}` | View all transactions     |
+| GET    | `/accounts`                   | List all accounts         |
+
+### 💰 Loan APIs
+
+| Method | Endpoint           | Description               |
+| ------ | ------------------ | ------------------------- |
+| POST   | `/loanEligibility` | Evaluate loan eligibility |
+
+### 📈 Financial Calculators
+
+| Method | Endpoint                      | Description                      |
+| ------ | ----------------------------- | -------------------------------- |
+| POST   | `/interest/calculateInterest` | Calculate Simple Interest        |
+| POST   | `/fixedDeposit`               | Calculate Fixed Deposit maturity |
+
+### 📅 Monthly Statement
+
+| Method | Endpoint                                    | Description                |
+| ------ | ------------------------------------------- | -------------------------- |
+| GET    | `/statement/{accountId}?month=MM&year=YYYY` | Generate monthly statement |
+
+### 🧮 Admin APIs
+
+| Method | Endpoint                | Description                      |
+| ------ | ----------------------- | -------------------------------- |
+| GET    | `/admin/totalCustomers` | Get total number of customers    |
+| GET    | `/admin/totalDeposits`  | Get total deposits               |
+| GET    | `/admin/topAccounts`    | Get top accounts (balance > ₹1L) |
+| GET    | `/admin/loanSummary`    | Get loan summary                 |
+| GET    | `/admin/dashboard`      | Get combined system dashboard    |
 
 ---
 
-### **Loan APIs**
-
-| Method | Endpoint           | Description            |
-| ------ | ------------------ | ---------------------- |
-| POST   | `/loanEligibility` | Check Loan Eligibility |
-
----
-
-### **Transaction APIs**
-
-| Method | Endpoint                        | Description                         |
-| ------ | ------------------------------- | ----------------------------------- |
-| GET    | `/transactions/{accountNumber}` | Get All Transactions for an Account |
-
----
-
-## 📦 Dependencies
+## ⚙️ Dependencies
 
 * Java 17+
-* Spring Boot
+* Spring Boot 3+
 * Spring Web
 * Spring Data JPA
 * Lombok
-* H2 / MySQL (configurable)
+* MySQL / H2 Database
 * JUnit 5
+* Maven
+
+---
+
+## 🌐 Database Configuration
+
+### 🧭 MySQL (default)
+
+```properties
+spring.application.name=banking_system
+spring.datasource.url=jdbc:mysql://localhost:3306/accountdb
+spring.datasource.username=root
+spring.datasource.password=
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+```
+
+### 🧪 H2 (In-Memory for Testing)
+
+```properties
+spring.datasource.url=jdbc:h2:mem:bankdb
+spring.datasource.driver-class-name=org.h2.Driver
+spring.datasource.username=sa
+spring.datasource.password=
+spring.h2.console.enabled=true
+spring.jpa.hibernate.ddl-auto=update
+```
 
 ---
 
 ## ▶️ How to Run
 
-### **Using Maven**
+### 🧰 Using Maven
 
 ```bash
 mvn clean install
 mvn spring-boot:run
 ```
 
-### **From IDE** (IntelliJ / Eclipse / Spring Tool Suite)
+### 🖥️ From IDE (Eclipse / IntelliJ)
 
-* Import as Maven project
-* Run `BankingSystemApplication.java`
+1. Import as **Maven Project**
+2. Run `BankingSystemApplication.java`
+3. Open browser → [http://localhost:8080](http://localhost:8080)
 
 ---
 
-## 🌐 Database Configuration
+## 🧪 Testing
 
-Uses **H2 in-memory DB** by default. For MySQL:
+### Run All Unit Tests
 
-```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/banking_system
-spring.datasource.username=root
-spring.datasource.password=yourpassword
-spring.jpa.hibernate.ddl-auto=update
+```bash
+mvn test
 ```
 
+### Included Tests
+
+* `InterestServiceTest`
+* `FixedDepositServiceTest`
+* `LoanEligibilityServiceTest`
+* `StatementServiceTest`
+* `AdminServiceTest`
+
 ---
 
-## 🧪 Test Coverage
+## 🔮 Planned Enhancements
 
-* Unit tests for loan eligibility service
-* More test cases planned for account and transfer logic
-
----
-
-## 🔮 Future Enhancements
-
-* JWT Authentication
-* Role-based access (Admin/User)
-* Swagger API Docs
-* Scheduler for interest calculation
-* Docker deployment
-* React/Angular UI
+* 🔐 JWT-based authentication (Admin/User roles)
+* 📄 Swagger / OpenAPI documentation
+* 🕓 Scheduled interest calculation jobs
+* ☁️ Docker & Cloud deployment (AWS/GCP)
+* 📨 Event-driven notifications (Kafka)
+* 💻 Frontend UI (React/Angular)
 
 ---
 
 ## 👨‍💻 Author
 
 **Mk Shashank**
+*Full Stack Java Developer | Passionate about scalable backend systems*
 
-> ⭐ If you found this helpful, star the repository on GitHub!
+📧 Email: [mkshashanklcw@gmail.com](mailto:mkshashanklcw@gmail.com)
+🌐 GitHub: [github.com/mkshashank](https://github.com/mkshashank)
 
+---
+
+⭐ *If you found this helpful, consider giving the repository a star!*
+
+---
