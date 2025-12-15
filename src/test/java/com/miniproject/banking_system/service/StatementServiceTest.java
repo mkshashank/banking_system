@@ -30,7 +30,7 @@ class StatementServiceTest {
     private AccountRepository accountRepository;
 
     @InjectMocks
-    private StatementService statementService; // Mockito will inject mocks here
+    private StatementService statementService;
 
     @BeforeEach
     void setUp() {
@@ -43,40 +43,38 @@ class StatementServiceTest {
         int month = 11;
         int year = 2025;
 
-        // Mock account
         Account account = new Account("Test User", 16000);
+        account.setId(accountId);
+
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
 
-        // Mock transactions
-        LocalDateTime t1 = LocalDateTime.of(2025, 10, 20, 10, 0); // before November
-        LocalDateTime t2 = LocalDateTime.of(2025, 11, 5, 10, 0);  // deposit in November
-        LocalDateTime t3 = LocalDateTime.of(2025, 11, 15, 12, 0); // withdraw in November
+        LocalDateTime t1 = LocalDateTime.of(2025, 10, 20, 10, 0);
+        LocalDateTime t2 = LocalDateTime.of(2025, 11, 5, 10, 0);
+        LocalDateTime t3 = LocalDateTime.of(2025, 11, 15, 12, 0);
 
-        Transaction tx1 = new Transaction(accountId, TransactionType.DEPOSIT, 5000);
-        Transaction tx2 = new Transaction(accountId, TransactionType.DEPOSIT, 3000);
-        Transaction tx3 = new Transaction(accountId, TransactionType.WITHDRAW, 2000);
+        Transaction tx1 = new Transaction(account, TransactionType.DEPOSIT, 5000);
+        Transaction tx2 = new Transaction(account, TransactionType.DEPOSIT, 3000);
+        Transaction tx3 = new Transaction(account, TransactionType.WITHDRAW, 2000);
 
         tx1.setTimestamp(t1);
         tx2.setTimestamp(t2);
         tx3.setTimestamp(t3);
 
-        List<Transaction> allTransactions = List.of(tx1, tx2, tx3);
-        List<Transaction> monthTransactions = List.of(tx2, tx3);
+        // IMPORTANT – USE CORRECT METHOD NAME
+        when(transactionRepository.findByAccount_IdOrderByTimestampDesc(accountId))
+                .thenReturn(List.of(tx1, tx2, tx3));
 
-        when(transactionRepository.findByAccountIdOrderByTimestampDesc(accountId)).thenReturn(allTransactions);
-        when(transactionRepository.findByAccountIdAndTimestampBetweenOrderByTimestampAsc(
-                eq(accountId), any(LocalDateTime.class), any(LocalDateTime.class))
-        ).thenReturn(monthTransactions);
+        when(transactionRepository.findByAccount_IdAndTimestampBetweenOrderByTimestampAsc(
+                eq(accountId), any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(List.of(tx2, tx3));
 
-        // Execute
         StatementResponse response = statementService.generateMonthlyStatement(accountId, month, year);
 
-        // Verify
         assertEquals("NOVEMBER", response.getMonth());
-        assertEquals(5000.0, response.getOpeningBalance());  // from October
+        assertEquals(5000.0, response.getOpeningBalance());
         assertEquals(3000.0, response.getTotalDeposits());
         assertEquals(2000.0, response.getTotalWithdrawals());
-        assertEquals(6000.0, response.getClosingBalance()); // 5000 + 3000 - 2000
+        assertEquals(6000.0, response.getClosingBalance());
     }
 
     @Test
@@ -84,12 +82,16 @@ class StatementServiceTest {
         Long accountId = 10L;
 
         Account account = new Account("No Txn User", 5000);
+        account.setId(accountId);
+
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
 
-        when(transactionRepository.findByAccountIdOrderByTimestampDesc(accountId)).thenReturn(List.of());
-        when(transactionRepository.findByAccountIdAndTimestampBetweenOrderByTimestampAsc(
-                eq(accountId), any(LocalDateTime.class), any(LocalDateTime.class))
-        ).thenReturn(List.of());
+        when(transactionRepository.findByAccount_IdOrderByTimestampDesc(accountId))
+                .thenReturn(List.of());
+
+        when(transactionRepository.findByAccount_IdAndTimestampBetweenOrderByTimestampAsc(
+                eq(accountId), any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(List.of());
 
         StatementResponse response = statementService.generateMonthlyStatement(accountId, 11, 2025);
 

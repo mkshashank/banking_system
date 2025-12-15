@@ -5,63 +5,62 @@ import com.miniproject.banking_system.dto.AdminSummaryResponse;
 import com.miniproject.banking_system.model.Account;
 import com.miniproject.banking_system.repository.AccountRepository;
 import com.miniproject.banking_system.repository.TransactionRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor   // ⭐ Constructor Injection (no more warnings)
 @Slf4j
 public class AdminService {
 
-    @Autowired
-    private AccountRepository accountRepository;
-
-    @Autowired
-    private TransactionRepository transactionRepository;
+    private final AccountRepository accountRepository;
+    private final TransactionRepository transactionRepository;
 
     /**
-     * Fetch total number of customers directly from DB using COUNT()
+     * Fetch total number of customers using COUNT(*)
      */
     public long getTotalCustomers() {
         long count = accountRepository.getTotalCustomers();
-        log.info("Total customers in system: {}", count);
+        log.info("Total customers: {}", count);
         return count;
     }
 
     /**
-     * Fetch total deposits directly from DB using SUM()
+     * Fetch total deposits from transaction table
      */
     public double getTotalDeposits() {
-        double total = transactionRepository.getTotalDeposits();
-        log.info("Total deposits (system-wide): ₹{}", total);
-        return total;
+        double totalDeposits = transactionRepository.getTotalDeposits();
+        log.info("Total system deposits: {}", totalDeposits);
+        return totalDeposits;
     }
 
     /**
-     * Get list of top accounts (balance > 1 lakh)
+     * Get all accounts with high balances (> ₹1L)
      */
     public List<Account> getTopAccounts() {
-        List<Account> topAccounts = accountRepository.getTopAccounts();
-        log.info("Top accounts found: {}", topAccounts.size());
-        return topAccounts;
+        List<Account> result = accountRepository.getTopAccounts();
+        log.info("Top accounts count: {}", result.size());
+        return result;
     }
 
     /**
-     * Build a combined summary response (aggregated view)
+     * Summary of loans (simulated for now)
      */
     public AdminSummaryResponse getLoanSummary() {
+
         long totalCustomers = accountRepository.getTotalCustomers();
         double totalDeposits = transactionRepository.getTotalDeposits();
         long topAccountsCount = accountRepository.countTopAccounts();
 
-        // Simulated loan data (replace with real DB logic when available)
+        // Simulated loan metrics until LoanApplication entity is added
         int totalLoanRequests = 8;
         int eligibleLoans = 5;
         int ineligibleLoans = totalLoanRequests - eligibleLoans;
 
-        log.info("Loan summary: totalRequests={}, eligible={}, ineligible={}",
+        log.info("Loan Summary → totalRequests={}, eligible={}, ineligible={}",
                 totalLoanRequests, eligibleLoans, ineligibleLoans);
 
         return new AdminSummaryResponse(
@@ -75,24 +74,24 @@ public class AdminService {
     }
 
     /**
-     * Combined dashboard summary — aggregates all core metrics
+     * Complete admin dashboard aggregation
      */
     public AdminDashboardResponse getDashboardSummary() {
+
         long totalCustomers = accountRepository.getTotalCustomers();
         double totalDeposits = transactionRepository.getTotalDeposits();
         double totalWithdrawals = transactionRepository.getTotalWithdrawals();
         long totalTransactions = transactionRepository.getTotalTransactions();
         long topAccountsCount = accountRepository.countTopAccounts();
 
-        // Simulated loan data — replace later with real DB integration
         int totalLoanRequests = 8;
         int eligibleLoans = 5;
         int ineligibleLoans = totalLoanRequests - eligibleLoans;
 
-        String systemHealth = "ACTIVE"; // could later check DB connection, queue status, etc.
+        String systemHealth = "ACTIVE";
 
-        log.info("Dashboard Summary → customers={}, deposits={}, withdrawals={}, transactions={}, topAccounts={}, loans={}/{}",
-                totalCustomers, totalDeposits, totalWithdrawals, totalTransactions, topAccountsCount, eligibleLoans, totalLoanRequests);
+        log.info("Admin Dashboard → customers={}, deposits={}, withdrawals={}, txns={}, topAccounts={}",
+                totalCustomers, totalDeposits, totalWithdrawals, totalTransactions, topAccountsCount);
 
         return new AdminDashboardResponse(
                 totalCustomers,

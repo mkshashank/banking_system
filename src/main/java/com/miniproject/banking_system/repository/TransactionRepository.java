@@ -11,22 +11,25 @@ import java.util.List;
 @Repository
 public interface TransactionRepository extends JpaRepository<Transaction, Long> {
 
-    List<Transaction> findByAccountIdOrderByTimestampDesc(Long accountId);
+    // ⭐ Fetch all transactions for an account
+    List<Transaction> findByAccount_IdOrderByTimestampDesc(Long accountId);
 
-    List<Transaction> findByAccountIdAndTimestampBetweenOrderByTimestampAsc(
-            Long accountId, LocalDateTime startDate, LocalDateTime endDate);
+    // ⭐ Fetch transactions for a time-range
+    List<Transaction> findByAccount_IdAndTimestampBetweenOrderByTimestampAsc(
+            Long accountId, LocalDateTime startDate, LocalDateTime endDate
+    );
 
-    // ✅ Total deposits across system (DEPOSIT or TRANSFER-IN)
+    // ⭐ Total deposits across the entire system
     @Query("SELECT COALESCE(SUM(t.amount), 0) FROM Transaction t " +
             "WHERE t.type = 'DEPOSIT' OR (t.type = 'TRANSFER' AND t.amount > 0)")
     double getTotalDeposits();
 
-    // ✅ Count total transactions in system
-    @Query("SELECT COUNT(t) FROM Transaction t")
-    long getTotalTransactions();
-
-    // ✅ Total withdrawals (including negative transfers)
+    // ⭐ Total withdrawals across the entire system
     @Query("SELECT COALESCE(SUM(ABS(t.amount)), 0) FROM Transaction t " +
             "WHERE t.type = 'WITHDRAW' OR (t.type = 'TRANSFER' AND t.amount < 0)")
     double getTotalWithdrawals();
+
+    // ⭐ Total transaction count in system
+    @Query("SELECT COUNT(t) FROM Transaction t")
+    long getTotalTransactions();
 }

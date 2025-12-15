@@ -2,44 +2,80 @@ package com.miniproject.banking_system.service;
 
 import com.miniproject.banking_system.dto.LoanEligibilityRequest;
 import com.miniproject.banking_system.dto.LoanEligibilityResponse;
+import com.miniproject.banking_system.exception.AccountNotFoundException;
+import com.miniproject.banking_system.model.Account;
+import com.miniproject.banking_system.model.LoanApplication;
+import com.miniproject.banking_system.repository.AccountRepository;
+import com.miniproject.banking_system.repository.LoanApplicationRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class LoanEligibilityService {
 
+    private final AccountRepository accountRepository;
+    private final LoanApplicationRepository loanApplicationRepository;
+
     public LoanEligibilityResponse evaluateEligibility(LoanEligibilityRequest request) {
+
         log.info("Evaluating loan eligibility for request: {}", request);
+
+        // 🔥 New: fetch account for FK linking
+        Account account = accountRepository.findById(request.getAccountId())
+                .orElseThrow(() -> new AccountNotFoundException(request.getAccountId()));
 
         int age = request.getAge();
         double income = request.getAnnualIncome();
         int creditScore = request.getCreditScore();
         double existingLoan = request.getExistingLoanAmount();
 
+        String status;
+        String reason = "";
+        double maxLoanAmount = 0;
+
         if (age < 21) {
-            log.warn("Loan eligibility failed: Age {} is below minimum requirement", age);
-            return new LoanEligibilityResponse("Not Eligible", "Minimum age requirement not met", 0);
+            status = "Not Eligible";
+            reason = "Minimum age requirement not met";
+        }
+        else if (income <= 300000) {
+            status = "Not Eligible";
+            reason = "Annual income below threshold";
+        }
+        else if (creditScore < 700) {
+            status = "Not Eligible";
+            reason = "Credit score below minimum threshold";
+        }
+        else if ((existingLoan / income) >= 0.4) {
+            status = "Not Eligible";
+            reason = "Loan-to-income ratio exceeds limit";
+        }
+        else {
+            status = "Eligible";
+            maxLoanAmount = income * 1.2 - existingLoan;
         }
 
-        if (income <= 300000) {
-            log.warn("Loan eligibility failed: Annual income ₹{} is below threshold", income);
-            return new LoanEligibilityResponse("Not Eligible", "Annual income below threshold", 0);
-        }
+        // 🔥 New — save application record
+        LoanApplication loan = new LoanApplication(
+                account,
+                age,
+                income,
+                creditScore,
+                existingLoan,
+                status,
+                reason,
+                maxLoanAmount
+        );
 
-        if (creditScore < 700) {
-            log.warn("Loan eligibility failed: Credit score {} is below minimum threshold", creditScore);
-            return new LoanEligibilityResponse("Not Eligible", "Credit score below minimum threshold", 0);
-        }
+        loan = loanApplicationRepository.save(loan);
 
-        double loanToIncomeRatio = existingLoan / income;
-        if (loanToIncomeRatio >= 0.4) {
-            log.warn("Loan eligibility failed: Loan-to-income ratio {:.2f} exceeds limit", loanToIncomeRatio);
-            return new LoanEligibilityResponse("Not Eligible", "Loan-to-income ratio exceeds limit", 0);
-        }
-
-        double maxLoanAmount = income * 1.2 - existingLoan;
-        log.info("Loan eligibility passed. Max loan amount calculated: ₹{}", maxLoanAmount);
-        return new LoanEligibilityResponse("Eligible", "", maxLoanAmount);
+        return new LoanEligibilityResponse(
+                loan.getId(),      // NEW
+                status,
+                reason,
+                maxLoanAmount
+        );
     }
 }

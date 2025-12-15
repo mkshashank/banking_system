@@ -4,107 +4,119 @@ import com.miniproject.banking_system.dto.ATMResponse;
 import com.miniproject.banking_system.dto.PinVerifyRequest;
 import com.miniproject.banking_system.dto.ValidateCardRequest;
 import com.miniproject.banking_system.dto.WithdrawRequest;
-import com.miniproject.banking_system.model.ATMCard;
-import com.miniproject.banking_system.repository.ATMCardRepository;
 import com.miniproject.banking_system.exception.AccountNotFoundException;
+import com.miniproject.banking_system.exception.InsufficientFundsException;
+import com.miniproject.banking_system.model.ATMCard;
 import com.miniproject.banking_system.model.Account;
+import com.miniproject.banking_system.model.Transaction;
+import com.miniproject.banking_system.model.TransactionType;
+import com.miniproject.banking_system.repository.ATMCardRepository;
 import com.miniproject.banking_system.repository.AccountRepository;
+import com.miniproject.banking_system.repository.TransactionRepository;
+
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ATMService {
 
-    private final ATMCardRepository cardRepo;
-    private final AccountRepository accountRepo;
+    private final ATMCardRepository atmCardRepository;
+    private final AccountRepository accountRepository;
+    private final TransactionRepository transactionRepository;
 
-    // 1) Validate Card
-    public ATMResponse validateCard(ValidateCardRequest req) {
-        ATMCard card = cardRepo.findByCardNumber(req.getCardNumber())
-                .orElseThrow(() -> new IllegalArgumentException("Invalid card"));
+    // -------------------- CARD VALIDATION --------------------
+    public ATMResponse validateCard(ValidateCardRequest request) {
 
-        if (!card.isActive())
-            return new ATMResponse("Card Blocked", 0);
+        ATMCard card = atmCardRepository.findByCardNumber(request.getCardNumber())
+                .orElseThrow(() -> new IllegalArgumentException("Invalid card number"));
 
-        // Check expiry
-        LocalDate expiry = LocalDate.parse(card.getExpiryDate() + "-01");
-        if (expiry.isBefore(LocalDate.now()))
-            return new ATMResponse("Card Expired", 0);
+        // expiryDate is already LocalDate → just use it
+        LocalDate expiry = card.getExpiryDate();
+        if (expiry.isBefore(LocalDate.now())) {
+            throw new IllegalArgumentException("Card expired");
+        }
 
-        return new ATMResponse("Card Validated", 0);
+        Account account = card.getAccount();
+        if (account == null) {
+            throw new AccountNotFoundException(null);
+        }
+
+        return new ATMResponse("CARD_VALID", account.getId(), account.getBalance());
     }
 
-    // 2) Verify PIN
-    public ATMResponse verifyPin(PinVerifyRequest req) {
-        ATMCard card = cardRepo.findByCardNumber(req.getCardNumber())
+    // -------------------- PIN VERIFICATION --------------------
+    public ATMResponse verifyPin(PinVerifyRequest request) {
+
+        ATMCard card = atmCardRepository.findByCardNumber(request.getCardNumber())
                 .orElseThrow(() -> new IllegalArgumentException("Invalid card"));
 
-        if (!card.isActive())
-            return new ATMResponse("Card Blocked", 0);
-
-        if (!card.getPin().equals(req.getPin())) {
+        if (!card.getPin().equals(request.getPin())) {
             card.setPinRetryCount(card.getPinRetryCount() + 1);
+            atmCardRepository.save(card);
 
             if (card.getPinRetryCount() >= 3) {
                 card.setActive(false);
-                cardRepo.save(card);
-                return new ATMResponse("Card Blocked - 3 Wrong Attempts", 0);
+                atmCardRepository.save(card);
+                throw new IllegalArgumentException("Card blocked due to 3 incorrect attempts");
             }
 
-            cardRepo.save(card);
-            return new ATMResponse("Incorrect PIN", 0);
+            throw new IllegalArgumentException("Incorrect PIN");
         }
 
-        // Correct PIN
+        // success → reset retry count
         card.setPinRetryCount(0);
-        cardRepo.save(card);
+        atmCardRepository.save(card);
 
-        Account acc = getAccount(card);
-        return new ATMResponse("PIN Verified", acc.getBalance());
+        return new ATMResponse("PIN_VALID", card.getAccount().getId(), null);
     }
 
-    // 3) Withdraw money with validations
-    public ATMResponse withdraw(WithdrawRequest req) {
-        ATMCard card = cardRepo.findByCardNumber(req.getCardNumber())
+    // -------------------- WITHDRAWAL --------------------
+    public ATMResponse withdraw(WithdrawRequest request) {
+
+        ATMCard card = atmCardRepository.findByCardNumber(request.getCardNumber())
                 .orElseThrow(() -> new IllegalArgumentException("Invalid card"));
 
-        if (!card.isActive())
-            return new ATMResponse("Card Blocked", 0);
+        Account account = card.getAccount();
+        if (account == null) throw new AccountNotFoundException(null);
 
-        Account acc = getAccount(card);
+        double amount = request.getAmount();
+
+        if (amount <= 0) throw new IllegalArgumentException("Withdrawal amount must be positive");
+        if (amount > account.getBalance()) throw new InsufficientFundsException(amount);
 
         // Daily limit check
-        if (card.getWithdrawnToday() + req.getAmount() > card.getDailyLimit())
-            return new ATMResponse("Daily limit exceeded", acc.getBalance());
+        if (card.getWithdrawnToday() + amount > card.getDailyLimit()) {
+            throw new IllegalArgumentException("Daily withdrawal limit exceeded");
+        }
 
-        // Balance check
-        if (acc.getBalance() < req.getAmount())
-            return new ATMResponse("Insufficient Balance", acc.getBalance());
+        // Deduct balance
+        account.setBalance(account.getBalance() - amount);
+        accountRepository.save(account);
 
-        // Perform withdrawal
-        acc.setBalance(acc.getBalance() - req.getAmount());
-        card.setWithdrawnToday(card.getWithdrawnToday() + req.getAmount());
+        // Update card daily usage
+        card.setWithdrawnToday(card.getWithdrawnToday() + amount);
+        atmCardRepository.save(card);
 
-        accountRepo.save(acc);
-        cardRepo.save(card);
+        // Save transaction
+        Transaction tx = new Transaction(account, TransactionType.WITHDRAW, amount);
+        transactionRepository.save(tx);
 
-        return new ATMResponse("Withdrawal Successful", acc.getBalance());
+        return new ATMResponse("WITHDRAW_SUCCESS", account.getId(), account.getBalance());
     }
+    public ATMResponse checkBalance(String cardNumber) {
 
-    // 4) Balance Inquiry
-    public ATMResponse balanceInquiry(String cardNumber) {
-        ATMCard card = cardRepo.findByCardNumber(cardNumber)
+        ATMCard card = atmCardRepository.findByCardNumber(cardNumber)
                 .orElseThrow(() -> new IllegalArgumentException("Invalid card"));
 
-        Account acc = getAccount(card);
-        return new ATMResponse("Balance Retrieved", acc.getBalance());
+        Account account = accountRepository.findById(card.getAccount().getId())
+                .orElseThrow(() -> new AccountNotFoundException(card.getAccount().getId()));
+
+        return new ATMResponse("BALANCE", account.getId(), account.getBalance());
     }
 
-    private Account getAccount(ATMCard card) {
-        return accountRepo.findById(card.getAccountId())
-                .orElseThrow(() -> new AccountNotFoundException(card.getAccountId()));
-    }
 }

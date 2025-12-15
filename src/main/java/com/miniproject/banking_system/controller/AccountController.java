@@ -4,96 +4,100 @@ import com.miniproject.banking_system.model.Account;
 import com.miniproject.banking_system.model.Transaction;
 import com.miniproject.banking_system.service.AccountService;
 import com.miniproject.banking_system.dto.TransferRequest;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
-import com.miniproject.banking_system.dto.InterestRequest;
-import com.miniproject.banking_system.dto.InterestResponse;
 
 import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/accounts")
+@RequiredArgsConstructor   // ⭐ Constructor injection (no warnings)
 @Slf4j
-public class AccountController
-{
+public class AccountController {
 
-    @Autowired
-    private AccountService accountService;
+    private final AccountService accountService;
 
     @PostMapping
-    public Map<String, Object> createAccount(@RequestBody Map<String, Object> request)
-    {
-        log.info("Received request to create account with data: {}", request);
+    public Map<String, Object> createAccount(@RequestBody Map<String, Object> request) {
+        log.info("Received request to create account: {}", request);
+
         String name = (String) request.get("name");
         double initialDeposit = ((Number) request.get("initialDeposit")).doubleValue();
+
         Account account = accountService.createAccount(name, initialDeposit);
-        log.info("Account created successfully. Account ID: {}, Balance: {}", account.getId()
-                , account.getBalance());
-        return Map.of("accountId", account.getId(), "balance", account.getBalance());
+
+        log.info("Account created. ID: {}, Balance: {}", account.getId(), account.getBalance());
+        return Map.of(
+                "accountId", account.getId(),
+                "balance", account.getBalance()
+        );
     }
 
     @GetMapping("/{id}")
-    public Account getAccount(@PathVariable Long id)
-    {
-        log.info("Fetching account details for Account ID: {}", id);
-        Account account = accountService.getAccount(id);
-        log.info("Account details retrieved: {}", account);
-        return account;
+    public Account getAccount(@PathVariable Long id) {
+        log.info("Fetching account {}", id);
+
+        Account acc = accountService.getAccount(id);
+
+        log.info("Account found: {}", acc);
+        return acc;
     }
 
     @GetMapping
-    public List<Account> getAllAccounts()
-    {
-        log.info("Fetching all account details");
-        List<Account> accounts = accountService.getAllAccounts();
-        log.info("Total accounts retrieved: {}", accounts.size());
-        return accounts;
+    public List<Account> getAllAccounts() {
+        log.info("Fetching all accounts");
+
+        List<Account> list = accountService.getAllAccounts();
+
+        log.info("Total accounts: {}", list.size());
+        return list;
     }
 
     @PostMapping("/{id}/deposit")
-    public Map<String, Object> deposit(@PathVariable Long id, @RequestBody Map<String, Object> request)
-    {
-        log.info("Received deposit request for Account ID: {} with data: {}", id, request);
+    public Map<String, Object> deposit(@PathVariable Long id, @RequestBody Map<String, Object> request) {
+        log.info("Deposit request for {} → {}", id, request);
+
         double amount = ((Number) request.get("amount")).doubleValue();
-        Account account = accountService.deposit(id, amount);
-        log.info("Deposit successful. New balance for Account ID {}: {}", account.getId()
-                , account.getBalance());
-        return Map.of("accountId", account.getId(), "balance", account.getBalance());
+        Account acc = accountService.deposit(id, amount);
+
+        return Map.of(
+                "accountId", acc.getId(),
+                "balance", acc.getBalance()
+        );
     }
 
     @PostMapping("/{id}/withdraw")
-    public Map<String, Object> withdraw(@PathVariable Long id, @RequestBody Map<String, Object> request)
-    {
-        log.info("Received withdrawal request for Account ID: {} with data: {}", id, request);
+    public Map<String, Object> withdraw(@PathVariable Long id, @RequestBody Map<String, Object> request) {
+        log.info("Withdraw request for {} → {}", id, request);
+
         double amount = ((Number) request.get("amount")).doubleValue();
-        Account account = accountService.withdraw(id, amount);
-        log.info("Withdrawal successful. New balance for Account ID {}: {}", account.getId()
-                , account.getBalance());
-        return Map.of("accountId", account.getId(), "balance", account.getBalance());
+        Account acc = accountService.withdraw(id, amount);
+
+        return Map.of(
+                "accountId", acc.getId(),
+                "balance", acc.getBalance()
+        );
     }
 
     @PostMapping("/transfer")
-    public String transfer(@RequestBody TransferRequest request)
-    {
-        log.info("Received transfer request: {}", request);
-        String result = accountService.transferFunds(
-                request.getFromAccount(),
-                request.getToAccount(),
-                request.getAmount()
+    public String transfer(@RequestBody TransferRequest req) {
+        log.info("Transfer request: {}", req);
+        return accountService.transferFunds(
+                req.getFromAccount(),
+                req.getToAccount(),
+                req.getAmount()
         );
-        log.info("Transfer result: {}", result);
-        return result;
     }
 
     @GetMapping("/transactions/{accountId}")
-    public List<Transaction> getTransactions(@PathVariable Long accountId)
-    {
-        log.info("Received request to fetch transactions for Account ID: {}", accountId);
-        List<Transaction> transactions = accountService.getTransactions(accountId);
-        log.info("Total transactions retrieved for Account ID {}: {}", accountId, transactions.size());
-        return transactions;
-    }
+    public List<Transaction> getTransactions(@PathVariable Long accountId) {
+        log.info("Fetching transactions for {}", accountId);
 
+        List<Transaction> list = accountService.getTransactions(accountId);
+
+        log.info("Transactions count for {}: {}", accountId, list.size());
+        return list;
+    }
 }

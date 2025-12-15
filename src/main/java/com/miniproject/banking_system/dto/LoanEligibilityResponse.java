@@ -6,6 +6,7 @@ import lombok.Data;
 @Data
 @AllArgsConstructor
 public class LoanEligibilityResponse {
+    private Long loanId;          // NEW FIELD
     private String status;
     private String reason;
     private double maxLoanAmount;

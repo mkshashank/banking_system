@@ -27,30 +27,29 @@ public class StatementService {
     private AccountRepository accountRepository;
 
     public StatementResponse generateMonthlyStatement(Long accountId, int month, int year) {
-        log.info("Generating monthly statement for Account ID: {}, Month: {}, Year: {}", accountId, month, year);
 
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new AccountNotFoundException(accountId));
 
-        // Define time range for the month
         YearMonth yearMonth = YearMonth.of(year, month);
         LocalDateTime startDate = yearMonth.atDay(1).atStartOfDay();
         LocalDateTime endDate = yearMonth.atEndOfMonth().atTime(23, 59, 59);
 
-        // Fetch transactions
-        List<Transaction> allTransactions = transactionRepository.findByAccountIdOrderByTimestampDesc(accountId);
-        List<Transaction> monthTransactions = transactionRepository
-                .findByAccountIdAndTimestampBetweenOrderByTimestampAsc(accountId, startDate, endDate);
+        List<Transaction> allTx = transactionRepository
+                .findByAccount_IdOrderByTimestampDesc(accountId);
 
-        // ---- Opening Balance (credits − debits before startDate)
-        double totalCreditsBefore = allTransactions.stream()
+        List<Transaction> monthlyTx = transactionRepository
+                .findByAccount_IdAndTimestampBetweenOrderByTimestampAsc(
+                        accountId, startDate, endDate);
+
+        double totalCreditsBefore = allTx.stream()
                 .filter(t -> t.getTimestamp().isBefore(startDate))
                 .filter(t -> t.getType() == TransactionType.DEPOSIT
                         || (t.getType() == TransactionType.TRANSFER && t.getAmount() > 0))
                 .mapToDouble(Transaction::getAmount)
                 .sum();
 
-        double totalDebitsBefore = allTransactions.stream()
+        double totalDebitsBefore = allTx.stream()
                 .filter(t -> t.getTimestamp().isBefore(startDate))
                 .filter(t -> t.getType() == TransactionType.WITHDRAW
                         || (t.getType() == TransactionType.TRANSFER && t.getAmount() < 0))
@@ -59,14 +58,13 @@ public class StatementService {
 
         double openingBalance = totalCreditsBefore - totalDebitsBefore;
 
-        // ---- Monthly totals
-        double totalDeposits = monthTransactions.stream()
+        double totalDeposits = monthlyTx.stream()
                 .filter(t -> t.getType() == TransactionType.DEPOSIT
                         || (t.getType() == TransactionType.TRANSFER && t.getAmount() > 0))
                 .mapToDouble(Transaction::getAmount)
                 .sum();
 
-        double totalWithdrawals = monthTransactions.stream()
+        double totalWithdrawals = monthlyTx.stream()
                 .filter(t -> t.getType() == TransactionType.WITHDRAW
                         || (t.getType() == TransactionType.TRANSFER && t.getAmount() < 0))
                 .mapToDouble(t -> Math.abs(t.getAmount()))
@@ -74,16 +72,13 @@ public class StatementService {
 
         double closingBalance = openingBalance + totalDeposits - totalWithdrawals;
 
-        StatementResponse response = new StatementResponse(
+        return new StatementResponse(
                 Month.of(month).name(),
                 round(openingBalance),
                 round(totalDeposits),
                 round(totalWithdrawals),
                 round(closingBalance)
         );
-
-        log.info("Monthly statement generated successfully for Account ID {}: {}", accountId, response);
-        return response;
     }
 
     private double round(double value) {

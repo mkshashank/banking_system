@@ -2,109 +2,97 @@ package com.miniproject.banking_system.service;
 
 import com.miniproject.banking_system.dto.CreditCardBillRequest;
 import com.miniproject.banking_system.dto.CreditCardBillResponse;
+import com.miniproject.banking_system.exception.AccountNotFoundException;
+import com.miniproject.banking_system.model.Account;
+import com.miniproject.banking_system.model.CreditCardBill;
+import com.miniproject.banking_system.repository.AccountRepository;
+import com.miniproject.banking_system.repository.CreditCardBillRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 
 @Service
+@RequiredArgsConstructor
 @Slf4j
 public class CreditCardBillService {
 
-    // APR chosen: 36% per year (as requested)
+    private final CreditCardBillRepository billRepo;
+    private final AccountRepository accountRepo;
+
     private static final double APR = 0.36;
     private static final double DAILY_RATE = APR / 365.0;
 
-    /**
-     * Calculate credit card bill details using realistic bank logic:
-     * - pendingAmount = totalSpending - paymentsMade
-     * - if not past due date -> no interest, no late fee (unless paid)
-     * - if past due and not fully paid -> late fee slab + interest per day delayed
-     *
-     * @param req CreditCardBillRequest
-     * @return CreditCardBillResponse
-     */
     public CreditCardBillResponse calculateBill(CreditCardBillRequest req) {
-        validateRequest(req);
 
-        LocalDate due;
-        LocalDate now;
-        try {
-            due = LocalDate.parse(req.getDueDate());
-            now = LocalDate.parse(req.getCurrentDate());
-        } catch (DateTimeParseException ex) {
-            throw new IllegalArgumentException("Invalid date format. Use ISO date: YYYY-MM-DD", ex);
-        }
+        Account account = accountRepo.findById(req.getAccountId())
+                .orElseThrow(() -> new AccountNotFoundException(req.getAccountId()));
 
-        double totalSpending = round(req.getTotalSpending());
-        double paymentsMade = round(req.getPaymentsMade());
+        LocalDate due = LocalDate.parse(req.getDueDate());
+        LocalDate now = LocalDate.parse(req.getCurrentDate());
 
-        if (paymentsMade < 0 || totalSpending < 0) {
-            throw new IllegalArgumentException("Amounts must be non-negative");
-        }
+        double spending = req.getTotalSpending();
+        double payments = req.getPaymentsMade();
+        double pending = Math.max(spending - payments, 0);
 
-        // pending amount (what is left to be paid for this cycle)
-        double pendingAmount = round(Math.max(0.0, totalSpending - paymentsMade));
+        double lateFee = 0;
+        double interest = 0;
+        String status;
+        int daysDelayed = 0;
 
-        // If not past due date
         if (!now.isAfter(due)) {
-            // If fully paid on or before due date
-            if (paymentsMade >= totalSpending) {
-                return new CreditCardBillResponse(0.0, 0.0, 0.0, 0.0, "Paid On Time", 0);
+            status = (pending == 0) ? "Paid On Time" : "Pending (Not Due)";
+        } else {
+            daysDelayed = (int) ChronoUnit.DAYS.between(due, now);
+
+            if (pending == 0) {
+                status = "Paid (Late)";
             } else {
-                // Not yet due, but pending
-                return new CreditCardBillResponse(pendingAmount, 0.0, 0.0, pendingAmount, "Pending (Not Due)", 0);
+                lateFee = computeLateFee(pending);
+                interest = pending * DAILY_RATE * daysDelayed;
+                status = "Overdue";
             }
         }
 
-        // Past due date
-        long daysDelayed = ChronoUnit.DAYS.between(due, now) > 0 ? (int) ChronoUnit.DAYS.between(due, now) : 0;
-
-        // If payment after due date but fully paid now
-        if (paymentsMade >= totalSpending) {
-            // Paid late — banks sometimes may charge interest for days past due until payment date.
-            // We'll consider this scenario as Paid (Late) with zero interest/late fee (simpler),
-            // but you can opt to compute interest up to payment date if desired.
-            return new CreditCardBillResponse(0.0, 0.0, 0.0, 0.0, "Paid (Late)", (int) daysDelayed);
-        }
-
-        // Overdue and not fully paid -> compute late fee + interest on pending amount for daysDelayed
-        double lateFee = computeLateFee(pendingAmount);
-        double interest = pendingAmount * DAILY_RATE * daysDelayed;
-
-        // Round results
         lateFee = round(lateFee);
         interest = round(interest);
+        double totalDue = round(pending + lateFee + interest);
 
-        double totalDue = round(pendingAmount + interest + lateFee);
+        // Persist bill
+        CreditCardBill bill = new CreditCardBill();
+        bill.setAccount(account);
+        bill.setTotalSpending(spending);
+        bill.setPaymentsMade(payments);
+        bill.setDueDate(due);
+        bill.setCurrentDate(now);
+        bill.setPendingAmount(pending);
+        bill.setInterest(interest);
+        bill.setLateFee(lateFee);
+        bill.setTotalDue(totalDue);
+        bill.setStatus(status);
+        bill.setDaysDelayed(daysDelayed);
 
-        log.info("Credit bill calculated => pending={}, daysDelayed={}, interest={}, lateFee={}, totalDue={}",
-                pendingAmount, daysDelayed, interest, lateFee, totalDue);
+        billRepo.save(bill);
 
-        return new CreditCardBillResponse(pendingAmount, interest, lateFee, totalDue, "Overdue", (int) daysDelayed);
+        return new CreditCardBillResponse(
+                pending,
+                interest,
+                lateFee,
+                totalDue,
+                status,
+                daysDelayed
+        );
     }
 
-    private double computeLateFee(double pendingAmount) {
-        // Slabs:
-        // pendingAmount ≤ 500        → ₹0
-        // 500 < pendingAmount ≤ 5000 → ₹500
-        // > 5000                     → ₹750
-        if (pendingAmount <= 500) return 0.0;
-        if (pendingAmount <= 5000) return 500.0;
-        return 750.0;
+    private double computeLateFee(double pending) {
+        if (pending <= 500) return 0;
+        if (pending <= 5000) return 500;
+        return 750;
     }
 
-    private void validateRequest(CreditCardBillRequest req) {
-        if (req == null) throw new IllegalArgumentException("Request cannot be null");
-        if (req.getDueDate() == null || req.getDueDate().isBlank())
-            throw new IllegalArgumentException("dueDate is required (YYYY-MM-DD)");
-        if (req.getCurrentDate() == null || req.getCurrentDate().isBlank())
-            throw new IllegalArgumentException("currentDate is required (YYYY-MM-DD)");
-    }
-
-    private double round(double value) {
-        return Math.round(value * 100.0) / 100.0;
+    private double round(double v) {
+        return Math.round(v * 100.0) / 100.0;
     }
 }
